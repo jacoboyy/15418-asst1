@@ -81,8 +81,41 @@ void clampedExpSerial(float* values, int* exponents, float* output, int N) {
 }
 
 void clampedExpVector(float* values, int* exponents, float* output, int N) {
-    // Implement your vectorized version of clampedExpSerial here
-    //  ...
+    __cmu418_vec_float result, x;
+    __cmu418_vec_int exp, andOne;
+    __cmu418_vec_int zero = _cmu418_vset_int(0);
+    __cmu418_vec_int one = _cmu418_vset_int(1);
+    __cmu418_vec_float bound = _cmu418_vset_float(4.18f);
+    __cmu418_mask maskAll, maskLoop, maskClamp, maskAnd, maskNotAnd;
+    for (int i=0; i<N; i+=VECTOR_WIDTH){
+	// handle case where N % VECTOR_WIDTH != 0
+	int width = std::min(VECTOR_WIDTH, N-i);
+	maskAll = _cmu418_init_ones(width);
+	// load original values
+	_cmu418_vload_float(x, values+i, maskAll);
+	_cmu418_vload_int(exp, exponents+i, maskAll);
+	result = _cmu418_vset_float(1.f);
+	// loop control
+	maskLoop = _cmu418_init_ones(0);
+	_cmu418_vgt_int(maskLoop, exp, zero, maskAll);
+	while (_cmu418_cntbits(maskLoop)) { // while (y>0)
+	    maskNotAnd = _cmu418_init_ones(0);
+	    andOne = _cmu418_vset_int(0);
+	    _cmu418_vbitand_int(andOne, exp, one, maskAll);
+	    _cmu418_veq_int(maskNotAnd, andOne, zero, maskAll);
+	    maskAnd = _cmu418_mask_not(maskNotAnd);
+	    maskAnd = _cmu418_mask_and(maskAnd, maskAll); // if (y & 0x1)
+	    _cmu418_vmult_float(result, result, x, maskAnd); // result *= xpower
+	    _cmu418_vmult_float(x, x, x, maskAll); // xpower *= xpower
+	    _cmu418_vshiftright_int(exp, exp, one, maskAll); // y >> 1
+	    _cmu418_vgt_int(maskLoop, exp, zero, maskAll);
+	}
+	// clamp results
+	_cmu418_vgt_float(maskClamp, result, bound, maskAll); // if (result > 4.18f)
+	_cmu418_vset_float(result, 4.18f, maskClamp); // result = 4.18f
+	// write results back to memory
+	_cmu418_vstore_float(output+i, result, maskAll); // output[i] = result;
+    }
 }
 
 
@@ -98,7 +131,23 @@ float arraySumSerial(float* values, int N) {
 // Assume N % VECTOR_WIDTH == 0
 // Assume VECTOR_WIDTH is a power of 2
 float arraySumVector(float* values, int N) {
-    // Implement your vectorized version here
-    //  ...
-	return 0.f;
+    __cmu418_vec_float temp;
+    __cmu418_vec_float result = _cmu418_vset_float(0.f);
+    __cmu418_mask maskAll = _cmu418_init_ones();
+    // vector sum
+    for (int i=0; i<N; i+= VECTOR_WIDTH) {
+	_cmu418_vload_float(temp, values+i, maskAll);
+	_cmu418_vadd_float(result, result, temp, maskAll);
+    }
+    // sum of vector sum
+    int width = VECTOR_WIDTH/2;
+    while (width) {
+	_cmu418_hadd_float(result, result);
+	_cmu418_interleave_float(result, result);
+	width /= 2;
+    }
+    // store and return
+    float output[VECTOR_WIDTH];
+    _cmu418_vstore_float(output, result, maskAll);
+    return output[0];
 }
