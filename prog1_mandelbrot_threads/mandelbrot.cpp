@@ -1,9 +1,8 @@
-#include <stdio.h>
 #include <pthread.h>
+#include <stdio.h>
 
 // Use this code to time your threads
 #include "CycleTimer.h"
-
 
 /*
 
@@ -44,25 +43,21 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
 // Core computation of Mandelbrot set membershop
 // Iterate complex number c to determine whether it diverges
-static inline int mandel(float c_re, float c_im, int count)
-{
-    float z_re = c_re, z_im = c_im;
-    int i;
-    for (i = 0; i < count; ++i) {
+static inline int mandel(float c_re, float c_im, int count) {
+  float z_re = c_re, z_im = c_im;
+  int i;
+  for (i = 0; i < count; ++i) {
+    if (z_re * z_re + z_im * z_im > 4.f) break;
 
-        if (z_re * z_re + z_im * z_im > 4.f)
-            break;
+    float new_re = z_re * z_re - z_im * z_im;
+    float new_im = 2.f * z_re * z_im;
+    z_re = c_re + new_re;
+    z_im = c_im + new_im;
+  }
 
-        float new_re = z_re*z_re - z_im*z_im;
-        float new_im = 2.f * z_re * z_im;
-        z_re = c_re + new_re;
-        z_im = c_im + new_im;
-    }
-
-    return i;
+  return i;
 }
 
 //
@@ -76,92 +71,85 @@ static inline int mandel(float c_re, float c_im, int count)
 //   into the image viewport.
 // * width, height describe the size of the output image
 // * startRow, endRow describe how much of the image to compute
-void mandelbrotSerial(
-    float x0, float y0, float x1, float y1,
-    int width, int height,
-    int startRow, int endRow,
-    int maxIterations,
-    int output[])
-{
-    float dx = (x1 - x0) / width;
-    float dy = (y1 - y0) / height;
+void mandelbrotSerial(float x0, float y0, float x1, float y1, int width,
+                      int height, int startRow, int endRow, int maxIterations,
+                      int output[]) {
+  float dx = (x1 - x0) / width;
+  float dy = (y1 - y0) / height;
 
-    for (int j = startRow; j < endRow; j++) {
-        for (int i = 0; i < width; ++i) {
-            float x = x0 + i * dx;
-            float y = y0 + j * dy;
+  for (int j = startRow; j < endRow; j++) {
+    for (int i = 0; i < width; ++i) {
+      float x = x0 + i * dx;
+      float y = y0 + j * dy;
 
-            int index = (j * width + i);
-            output[index] = mandel(x, y, maxIterations);
-        }
+      int index = (j * width + i);
+      output[index] = mandel(x, y, maxIterations);
     }
+  }
 }
 
 /**
  * Given the total number of threads N and the thread id T, each
  * thread is in charge of row_idx = N * k + T, where k = 0,1,2...
  * until out of bounds
-**/
-void mandelbrotUpdated(
-    float x0, float y0, float x1, float y1,
-    int width, int height,
-    int numThreads, int threadId,
-    int maxIterations,
-    int output[])
-{
-    float dx = (x1 - x0) / width;
-    float dy = (y1 - y0) / height;
-    
-    int k = 0;
-    while (true) {
-        int j = k * numThreads + threadId;
-	if (j >= height) {
-	    break;
-	}
-	k += 1;
-	for (int i=0; i<width; ++i) {
-	    float x = x0 + i * dx;
-	    float y = y0 + j * dy;
+ **/
+void mandelbrotUpdated(float x0, float y0, float x1, float y1, int width,
+                       int height, int numThreads, int threadId,
+                       int maxIterations, int output[]) {
+  float dx = (x1 - x0) / width;
+  float dy = (y1 - y0) / height;
 
-	    int index = (j * width + i);
-	    output[index] = mandel(x, y, maxIterations);
-	}
+  int k = 0;
+  while (true) {
+    int j = k * numThreads + threadId;
+    if (j >= height) {
+      break;
     }
+    k += 1;
+    for (int i = 0; i < width; ++i) {
+      float x = x0 + i * dx;
+      float y = y0 + j * dy;
+
+      int index = (j * width + i);
+      output[index] = mandel(x, y, maxIterations);
+    }
+  }
 }
 
 // Struct for passing arguments to thread routine
 typedef struct {
-    float x0, x1;
-    float y0, y1;
-    unsigned int width;
-    unsigned int height;
-    int maxIterations;
-    int* output;
-    int threadId;
-    int numThreads;
+  float x0, x1;
+  float y0, y1;
+  unsigned int width;
+  unsigned int height;
+  int maxIterations;
+  int* output;
+  int threadId;
+  int numThreads;
 } WorkerArgs;
-
-
 
 //
 // workerThreadStart --
 //
 // Thread entrypoint.
 void* workerThreadStart(void* threadArgs) {
-    int startTime = CycleTimer::currentSeconds();
-    WorkerArgs* args = static_cast<WorkerArgs*>(threadArgs);
-    mandelbrotUpdated(args->x0, args->y0, args->x1, args->y1, args->width, args->height,
-		    args->numThreads, args->threadId, args->maxIterations, args->output);
-    /*
-    int numRows = args->height / args->numThreads;
-    int startRow = args->threadId * numRows;
-    int endRow = args->threadId + 1 == args->numThreads ? args->height : startRow + numRows;
-    mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, 
-		    startRow, endRow, args->maxIterations, args->output);
-    */
-    double endTime = CycleTimer::currentSeconds();
-    printf("thread %d:\t[%.2f] ms\n", args->threadId, (endTime - startTime) * 1000);
-    return NULL;
+  int startTime = CycleTimer::currentSeconds();
+  WorkerArgs* args = static_cast<WorkerArgs*>(threadArgs);
+  mandelbrotUpdated(args->x0, args->y0, args->x1, args->y1, args->width,
+                    args->height, args->numThreads, args->threadId,
+                    args->maxIterations, args->output);
+  /*
+  int numRows = args->height / args->numThreads;
+  int startRow = args->threadId * numRows;
+  int endRow = args->threadId + 1 == args->numThreads ? args->height : startRow
+  + numRows; mandelbrotSerial(args->x0, args->y0, args->x1, args->y1,
+  args->width, args->height, startRow, endRow, args->maxIterations,
+  args->output);
+  */
+  double endTime = CycleTimer::currentSeconds();
+  printf("thread %d:\t[%.2f] ms\n", args->threadId,
+         (endTime - startTime) * 1000);
+  return NULL;
 }
 
 //
@@ -169,46 +157,40 @@ void* workerThreadStart(void* threadArgs) {
 //
 // Multi-threaded implementation of mandelbrot set image generation.
 // Multi-threading performed via pthreads.
-void mandelbrotThread(
-    int numThreads,
-    float x0, float y0, float x1, float y1,
-    int width, int height,
-    int maxIterations, int output[])
-{
-    const static int MAX_THREADS = 32;
+void mandelbrotThread(int numThreads, float x0, float y0, float x1, float y1,
+                      int width, int height, int maxIterations, int output[]) {
+  const static int MAX_THREADS = 32;
 
-    if (numThreads > MAX_THREADS)
-    {
-        fprintf(stderr, "Error: Max allowed threads is %d\n", MAX_THREADS);
-        exit(1);
-    }
+  if (numThreads > MAX_THREADS) {
+    fprintf(stderr, "Error: Max allowed threads is %d\n", MAX_THREADS);
+    exit(1);
+  }
 
-    pthread_t workers[MAX_THREADS];
-    WorkerArgs args[MAX_THREADS];
+  pthread_t workers[MAX_THREADS];
+  WorkerArgs args[MAX_THREADS];
 
-    for (int i=0; i<numThreads; i++) {
-        args[i].x0 = x0;
-	args[i].x1 = x1;
-	args[i].y0 = y0;
- 	args[i].y1 = y1;
-	args[i].width = width;
-	args[i].height = height;
-	args[i].maxIterations = maxIterations;
-	args[i].output = output;	
-        args[i].threadId = i;
-	args[i].numThreads = numThreads;
-    }
+  for (int i = 0; i < numThreads; i++) {
+    args[i].x0 = x0;
+    args[i].x1 = x1;
+    args[i].y0 = y0;
+    args[i].y1 = y1;
+    args[i].width = width;
+    args[i].height = height;
+    args[i].maxIterations = maxIterations;
+    args[i].output = output;
+    args[i].threadId = i;
+    args[i].numThreads = numThreads;
+  }
 
-    // Fire up the worker threads.  Note that numThreads-1 pthreads
-    // are created and the main app thread is used as a worker as
-    // well.
+  // Fire up the worker threads.  Note that numThreads-1 pthreads
+  // are created and the main app thread is used as a worker as
+  // well.
 
-    for (int i=1; i<numThreads; i++)
-        pthread_create(&workers[i], NULL, workerThreadStart, &args[i]);
+  for (int i = 1; i < numThreads; i++)
+    pthread_create(&workers[i], NULL, workerThreadStart, &args[i]);
 
-    workerThreadStart(&args[0]);
+  workerThreadStart(&args[0]);
 
-    // wait for worker threads to complete
-    for (int i=1; i<numThreads; i++)
-        pthread_join(workers[i], NULL);
+  // wait for worker threads to complete
+  for (int i = 1; i < numThreads; i++) pthread_join(workers[i], NULL);
 }
