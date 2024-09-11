@@ -97,6 +97,37 @@ void mandelbrotSerial(
     }
 }
 
+/**
+ * Given the total number of threads N and the thread id T, each
+ * thread is in charge of row_idx = N * k + T, where k = 0,1,2...
+ * until out of bounds
+**/
+void mandelbrotUpdated(
+    float x0, float y0, float x1, float y1,
+    int width, int height,
+    int numThreads, int threadId,
+    int maxIterations,
+    int output[])
+{
+    float dx = (x1 - x0) / width;
+    float dy = (y1 - y0) / height;
+    
+    int k = 0;
+    while (true) {
+        int j = k * numThreads + threadId;
+	if (j >= height) {
+	    break;
+	}
+	k += 1;
+	for (int i=0; i<width; ++i) {
+	    float x = x0 + i * dx;
+	    float y = y0 + j * dy;
+
+	    int index = (j * width + i);
+	    output[index] = mandel(x, y, maxIterations);
+	}
+    }
+}
 
 // Struct for passing arguments to thread routine
 typedef struct {
@@ -117,15 +148,17 @@ typedef struct {
 //
 // Thread entrypoint.
 void* workerThreadStart(void* threadArgs) {
-
+    int startTime = CycleTimer::currentSeconds();
     WorkerArgs* args = static_cast<WorkerArgs*>(threadArgs);
-
+    mandelbrotUpdated(args->x0, args->y0, args->x1, args->y1, args->width, args->height,
+		    args->numThreads, args->threadId, args->maxIterations, args->output);
+    /*
     int numRows = args->height / args->numThreads;
     int startRow = args->threadId * numRows;
     int endRow = args->threadId + 1 == args->numThreads ? args->height : startRow + numRows;
-    double startTime = CycleTimer::currentSeconds();
     mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, 
 		    startRow, endRow, args->maxIterations, args->output);
+    */
     double endTime = CycleTimer::currentSeconds();
     printf("thread %d:\t[%.2f] ms\n", args->threadId, (endTime - startTime) * 1000);
     return NULL;
